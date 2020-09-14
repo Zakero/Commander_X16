@@ -1,0 +1,122 @@
+.SUFFIXES:
+
+################################################################################
+# Function Macros
+################################################################################
+
+# ToLower and ToUpper are not used anymore but since they were a pain to put in
+# they are staying.  For now...
+ToLower = $(subst A,a,$(subst B,b,$(subst C,c,$(subst D,d,$(subst E,e,$(subst F,f,$(subst G,g,$(subst H,h,$(subst I,i,$(subst J,j,$(subst K,k,$(subst L,l,$(subst M,m,$(subst N,n,$(subst O,o,$(subst P,p,$(subst Q,q,$(subst R,r,$(subst S,s,$(subst T,t,$(subst U,u,$(subst V,v,$(subst W,w,$(subst X,x,$(subst Y,y,$(subst Z,z,$1))))))))))))))))))))))))))
+ToUpper = $(subst a,A,$(subst b,B,$(subst c,C,$(subst d,D,$(subst e,E,$(subst f,F,$(subst g,G,$(subst h,H,$(subst i,I,$(subst j,J,$(subst k,K,$(subst l,L,$(subst m,M,$(subst n,N,$(subst o,O,$(subst p,P,$(subst q,Q,$(subst r,R,$(subst s,S,$(subst t,T,$(subst u,U,$(subst v,V,$(subst w,W,$(subst x,X,$(subst y,Y,$(subst z,Z,$1))))))))))))))))))))))))))
+
+
+################################################################################
+# Variables
+################################################################################
+
+################################################################################
+# The path to cc65 support files
+CC65_DIR := $(HOME)/Project/Commander_X16/cc65_github
+
+ASM := ca65 --target cx16
+LD  := ld65					\
+	--cfg-path $(CC65_DIR)/cfg		\
+	--config cx16-asm.cfg			\
+	--force-import __EXEHDR__		\
+	--obj-path $(CC65_DIR)/libwrk/cx16	\
+	--obj-path .				\
+	exehdr.o				\
+	loadaddr.o
+
+OBJ := $(SRC:%.s=%.o)
+
+################################################################################
+ifeq ("$(RES)", "")
+	ConverterX16       := 
+	Converter_Makefile := 
+	Converter_Output   := 
+else
+	ConverterX16       := ConverterX16.py $(RES)
+	Converter_Makefile := $(shell $(ConverterX16) --makefile)
+	Converter_Output   := $(shell $(ConverterX16) --list-output-files)
+endif
+
+################################################################################
+ifeq ("$(SDCARD)", "")
+	USE_SDCARD :=
+	SDCARD_DIR :=
+else
+	USE_SDCARD := -sdcard $(SDCARD)
+	SDCARD_DIR := $(basename $(SDCARD))
+endif
+
+
+################################################################################
+# Targets
+################################################################################
+
+################################################################################
+# Build all files related to the program
+# - Unless overridden, this is the default target
+prg: $(PRG) $(RES) $(Converter_Output)
+
+
+################################################################################
+# Build the program
+$(PRG): $(OBJ)
+	$(LD) -o $(PRG) $(OBJ)
+
+
+################################################################################
+# Run the program and mount the SD Card if available.
+# - Debugging mode is enabled
+.PHONY: run
+run: $(PRG)
+	x16emu -debug -scale 2 -quality nearest -prg $< -run $(USE_SDCARD)
+
+
+################################################################################
+# Remove all built and intermediate files.  Does NOT touch the SD Card image.
+.PHONY: clean
+clean:
+	rm -f $(PRG) $(OBJ) $(Converter_Output) $(Converter_Makefile)
+
+
+################################################################################
+# Copy the program and resource files to the SD Card
+.PHONY: sdcard
+sdcard: $(PRG)
+ifeq ("$(SDCARD)", "")
+	@echo "SDCARD does not have the location of the SD Card to use."
+	@exit
+else
+	sdcard.sh --mount $(SDCARD)
+	cp $(PRG) $(Converter_Output) $(SDCARD_DIR)
+	@sync; sync
+	sdcard.sh --unmount $(SDCARD)
+endif
+
+
+################################################################################
+# Remove the program and resource files from the SD Card
+.PHONY: sdcard_clean
+sdcard_clean:
+ifeq ("$(SDCARD)", "")
+	@echo "SDCARD does not have the location of the SD Card to use."
+	@exit
+else
+	sdcard.sh --mount $(SDCARD)
+	cd $(SDCARD_DIR); rm -f $(PRG) $(Converter_Output)
+	@sync; sync
+	sdcard.sh --unmount $(SDCARD)
+endif
+
+
+################################################################################
+# Compile the *.s files
+%.o: %.s
+	$(ASM) $<
+
+
+################################################################################
+include $(Converter_Makefile)
